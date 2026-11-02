@@ -3,10 +3,18 @@ from pydantic import BaseModel
 from langchain_ollama import ChatOllama
 import os
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 llm = ChatOllama(
     model="gemma4:cloud",
