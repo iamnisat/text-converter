@@ -4,6 +4,9 @@ from langchain_ollama import ChatOllama
 import os
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
+import unicodedata
+from pydantic import BaseModel, Field, field_validator
+
 
 load_dotenv()
 
@@ -27,8 +30,41 @@ llm = ChatOllama(
     },
 )
 
+
+
 class NameRequest(BaseModel):
-    name: str
+    name: str = Field(
+        ...,
+        strict=True,
+        min_length=1,
+        max_length=100,
+        description="Bangla name containing only Bangla letters and spaces",
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        # Allow only Bangla letters, combining marks, and regular spaces.
+        for char in value:
+            if char == " ":
+                continue
+
+            is_bangla = "\u0980" <= char <= "\u09FF"
+            is_letter_or_mark = unicodedata.category(char).startswith(("L", "M"))
+
+            if not (is_bangla and is_letter_or_mark):
+                raise ValueError(
+                    "Name must contain only Bangla letters and spaces"
+                )
+
+        value = value.strip()
+
+        if not value or not any(
+            unicodedata.category(char).startswith("L") for char in value
+        ):
+            raise ValueError("Name must contain at least one Bangla letter")
+
+        return value
 
 
 @app.post("/transliterate")
