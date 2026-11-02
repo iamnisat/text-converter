@@ -30,6 +30,9 @@ llm = ChatOllama(
     },
 )
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
 class NameRequest(BaseModel):
