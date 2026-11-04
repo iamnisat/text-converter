@@ -34,9 +34,9 @@ llm = ChatOllama(
 class NameResponse(BaseModel):
     """The three names transliterated into English."""
 
-    name: str = Field(description="Person's name in English")
-    fathers_name: str = Field(description="Father's name in English")
-    mothers_name: str = Field(description="Mother's name in English")
+    name: str | None = Field(default=None, description="Person's name in English")
+    fathers_name: str | None = Field(default=None, description="Father's name in English")
+    mothers_name: str | None = Field(default=None, description="Mother's name in English")
 
 
 structured_llm = llm.with_structured_output(
@@ -50,23 +50,28 @@ async def health():
 
 
 class NameRequest(BaseModel):
-    name: str = Field(..., strict=True, min_length=1, max_length=100)
-    fathers_name: str = Field(..., strict=True, min_length=1, max_length=100)
-    mothers_name: str = Field(..., strict=True, min_length=1, max_length=100)
+    name: str | None = Field(default=None, strict=True, min_length=1, max_length=100)
+    fathers_name: str | None = Field(default=None, strict=True, min_length=1, max_length=100)
+    mothers_name: str | None = Field(default=None, strict=True, min_length=1, max_length=100)
 
     @field_validator("name", "fathers_name", "mothers_name")
     @classmethod
-    def validate_name(cls, value: str) -> str:
+    def validate_name(cls, value: str | None) -> str | None:
         # Allow only Bangla letters, combining marks, and regular spaces.
+        if value is None:
+            return None
+
         for char in value:
             if char in " :.":
                 continue
-            is_bangla = "\u0980" <= char <= "\u09FF"
-            is_letter_or_mark = unicodedata.category(char).startswith(("L", "M"))
-
-            if not (is_bangla and is_letter_or_mark):
+            is_english = "A" <= char <= "Z" or "a" <= char <= "z"
+            is_bangla = (
+                "\u0980" <= char <= "\u09FF"
+                and unicodedata.category(char).startswith(("L", "M"))
+            )
+            if not (is_english or is_bangla):
                 raise ValueError(
-                    "Name must contain only Bangla letters and spaces"
+                    "Name must contain only Bangla or English letters, spaces, :, and period"
                 )
 
         value = value.strip()
@@ -74,7 +79,7 @@ class NameRequest(BaseModel):
         if not value or not any(
             unicodedata.category(char).startswith("L") for char in value
         ):
-            raise ValueError("Name must contain at least one Bangla letter")
+            raise ValueError("Name must contain at least one Bangla or English letter")
 
         return value
 
@@ -82,12 +87,13 @@ class NameRequest(BaseModel):
 @app.post("/transliterate")
 async def transliterate(request: NameRequest):
     prompt = f"""
-Transliterate these three Bangla names into natural English spelling.
+Transliterate these Bangla names into natural English spelling.
 
 Rules:
 - Do not translate the meanings.
 - Preserve each person's name as closely as possible.
-- Return all three English names using the provided output schema.
+- Return all English names using the provided output schema.
+- For any input field that is null or missing, return null for that field.
 
 Input:
 {json.dumps(request.model_dump(), ensure_ascii=False)}
