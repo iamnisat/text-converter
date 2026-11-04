@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 import unicodedata
 from pydantic import BaseModel, Field, field_validator
+import json
 
 
 load_dotenv()
@@ -30,28 +31,36 @@ llm = ChatOllama(
     },
 )
 
+class NameResponse(BaseModel):
+    """The three names transliterated into English."""
+
+    name: str = Field(description="Person's name in English")
+    fathers_name: str = Field(description="Father's name in English")
+    mothers_name: str = Field(description="Mother's name in English")
+
+
+structured_llm = llm.with_structured_output(
+    NameResponse,
+    method="function_calling",
+)
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
 class NameRequest(BaseModel):
-    name: str = Field(
-        ...,
-        strict=True,
-        min_length=1,
-        max_length=100,
-        description="Bangla name containing only Bangla letters and spaces",
-    )
+    name: str = Field(..., strict=True, min_length=1, max_length=100)
+    fathers_name: str = Field(..., strict=True, min_length=1, max_length=100)
+    mothers_name: str = Field(..., strict=True, min_length=1, max_length=100)
 
-    @field_validator("name")
+    @field_validator("name", "fathers_name", "mothers_name")
     @classmethod
     def validate_name(cls, value: str) -> str:
         # Allow only Bangla letters, combining marks, and regular spaces.
         for char in value:
-            if char == " ":
+            if char in " :.":
                 continue
-
             is_bangla = "\u0980" <= char <= "\u09FF"
             is_letter_or_mark = unicodedata.category(char).startswith(("L", "M"))
 
@@ -73,20 +82,16 @@ class NameRequest(BaseModel):
 @app.post("/transliterate")
 async def transliterate(request: NameRequest):
     prompt = f"""
-Transliterate this Bangla person's name into natural English spelling.
+Transliterate these three Bangla names into natural English spelling.
 
 Rules:
-- Output ONLY the English name.
-- Do not explain anything.
-- Do not translate the meaning.
-- Preserve the person's name as closely as possible.
+- Do not translate the meanings.
+- Preserve each person's name as closely as possible.
+- Return all three English names using the provided output schema.
 
-Bangla name: {request.name}
+Input:
+{json.dumps(request.model_dump(), ensure_ascii=False)}
 """
 
-    response = await llm.ainvoke(prompt)
-
-    return {
-        "bangla_name": request.name,
-        "english_name": response.content.strip(),
-    }
+    result = await structured_llm.ainvoke(prompt)
+    return result
